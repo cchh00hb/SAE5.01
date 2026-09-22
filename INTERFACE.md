@@ -1,56 +1,80 @@
-# Contrat d'interface — SAE5.01 Traçage de véhicule par GNSS
+# Contrat d'interface — SAE5.01 Tracage de vehicule par GNSS
 
-Ce document fige le **format des données échangées** entre les trois pôles du projet
-(End-Device embarqué, TTN/LoRaWAN, serveur Node-RED).
+Ce document fige le format des donnees echangees entre les trois poles du projet :
+End-Device embarque, TTN/LoRaWAN, serveur Node-RED.
 
-Il doit être lu avant d'écrire la moindre ligne de code, et respecté au caractère près.
-Toute modification suit la procédure décrite en fin de document.
+A lire avant d'ecrire la moindre ligne de code, et a respecter au caractere pres.
+Toute modification suit la procedure decrite en section 7.
 
-**Version : 1.0 — dernière mise à jour : 2026-09-22**
+Version : 1.1 — derniere mise a jour : 2026-09-22
 
----
-
-## 0. Paramètres communs
-
-| Élément | Valeur | À compléter par |
-|---|---|---|
-| Identifiant de groupe | `groupeX` | tous — remplacer `X` partout |
-| IP fixe du Raspberry Pi | `192.168.X.X` | pôle Node-RED |
-| Broker MQTT local | `mosquitto` sur le RPi, port `1883` | pôle TTN 2 |
-| Application TTN | `sae501-groupeX` | pôle TTN 1 |
-| Device ID TTN | `end-device-groupeX` | pôle TTN 1 |
-
-Convention de nommage générale : **minuscules, sans accent, séparateur `-` ou `/`**.
 
 ---
 
-## 1. Topics MQTT
+## 1. Parametres communs
 
-### 1.1 Liaison directe WiFi (étapes 1 et 2)
+A completer en debut de projet, puis ne plus y toucher.
+
+- **Identifiant de groupe** : `groupeX`
+  A remplacer partout dans ce fichier et dans le code.
+
+- **IP fixe du Raspberry Pi** : `192.168.X.X`
+  Responsable : pole Node-RED.
+
+- **Broker MQTT local** : Mosquitto sur le RPi, port `1883`
+  Responsable : pole TTN 2.
+
+- **Nom de l'application TTN** : `sae501-groupeX`
+  Responsable : pole TTN 1.
+
+- **Device ID TTN** : `end-device-groupeX`
+  Responsable : pole TTN 1.
+
+Convention de nommage generale : minuscules, sans accent, separateur `-` ou `/`.
+
+
+---
+
+## 2. Topics MQTT
+
+### 2.1 Liaison directe WiFi (etapes 1 et 2)
 
 Le End-Device publie directement sur le broker Mosquitto du RPi.
 
-| Sens | Topic | Publié par | Consommé par |
-|---|---|---|---|
-| Montant | `sae501/groupeX/position` | End-Device | Node-RED, MQTT Box |
+Topic montant :
 
-### 1.2 Liaison LoRaWAN via TTN (étapes 6, 7, 10, 11)
+    sae501/groupeX/position
 
-Node-RED se connecte au broker MQTT fourni par TTN (`Integrations > MQTT`).
+- Publie par : le End-Device
+- Consomme par : Node-RED et MQTT Box
 
-| Sens | Topic | Publié par | Consommé par |
-|---|---|---|---|
-| Montant | `v3/sae501-groupeX@ttn/devices/end-device-groupeX/up` | TTN | Node-RED |
-| Descendant | `v3/sae501-groupeX@ttn/devices/end-device-groupeX/down/push` | Node-RED | TTN → End-Device |
+### 2.2 Liaison LoRaWAN via TTN (etapes 6, 7, 10, 11)
 
-> Le nom du tenant est `ttn` pour un compte The Things Network communautaire.
-> Il est visible en clair dans l'onglet `Integrations > MQTT` de l'application.
+Node-RED se connecte au broker MQTT fourni par TTN, onglet `Integrations > MQTT`.
+
+Topic montant :
+
+    v3/sae501-groupeX@ttn/devices/end-device-groupeX/up
+
+- Publie par : TTN
+- Consomme par : Node-RED
+
+Topic descendant :
+
+    v3/sae501-groupeX@ttn/devices/end-device-groupeX/down/push
+
+- Publie par : Node-RED
+- Consomme par : TTN, qui transmet au End-Device
+
+Le nom du tenant est `ttn` pour un compte The Things Network communautaire.
+Il est visible en clair dans l'onglet `Integrations > MQTT` de l'application.
+
 
 ---
 
-## 2. Payload JSON — liaison WiFi (étapes 1 et 2)
+## 3. Payload JSON — liaison WiFi (etapes 1 et 2)
 
-Message publié sur `sae501/groupeX/position` :
+Message publie sur `sae501/groupeX/position` :
 
 ```json
 {
@@ -61,61 +85,74 @@ Message publié sur `sae501/groupeX/position` :
 }
 ```
 
-| Champ | Type | Unité | Obligatoire | Remarque |
-|---|---|---|---|---|
-| `lat` | nombre | degrés décimaux | oui | positif = Nord |
-| `lon` | nombre | degrés décimaux | oui | positif = Est |
-| `alt` | nombre entier | mètres | non | `0` si indisponible |
-| `ts` | nombre entier | secondes Unix | non | horloge du End-Device |
+Description des champs :
 
-**Règles impératives**
+- `lat` — nombre, degres decimaux, **obligatoire**
+  Positif vers le Nord.
 
-- Les valeurs sont des **nombres JSON**, jamais des chaînes : `48.0794` et non `"48.0794"`.
-- Le format est le **degré décimal**, pas le format NMEA (`4804.764,N`).
-  La conversion est faite côté End-Device.
-- En l'absence de fix GNSS, **aucun message n'est publié**. Pas de `null`, pas de `0.0`.
+- `lon` — nombre, degres decimaux, **obligatoire**
+  Positif vers l'Est.
+
+- `alt` — nombre entier, metres, optionnel
+  Mettre `0` si l'altitude n'est pas disponible.
+
+- `ts` — nombre entier, secondes Unix, optionnel
+  Horloge du End-Device.
+
+Regles imperatives :
+
+- Les valeurs sont des **nombres JSON**, jamais des chaines.
+  Ecrire `48.0794` et non `"48.0794"`.
+
+- Le format est le **degre decimal**, pas le format NMEA brut (`4804.764,N`).
+  La conversion est faite cote End-Device.
+
+- En l'absence de fix GNSS, **aucun message n'est publie**.
+  Pas de `null`, pas de `0.0`, pas de message vide.
+
 
 ---
 
-## 3. Payload binaire LoRa — trame montante (étape 8)
+## 4. Payload binaire LoRa — trame montante (etape 8)
 
-Contrainte : la couche physique LoRa impose de réduire la taille utile.
-Latitude et longitude sont codées **sur 3 octets chacune**.
+La couche physique LoRa impose de reduire la taille utile.
+Latitude et longitude sont codees sur 3 octets chacune.
 
-### 3.1 Structure — 7 octets
+### 4.1 Structure de la trame — 7 octets
 
-| Offset | Taille | Champ | Encodage |
-|---|---|---|---|
-| 0 | 3 octets | latitude | entier **signé**, big-endian, complément à 2 |
-| 3 | 3 octets | longitude | entier **signé**, big-endian, complément à 2 |
-| 6 | 1 octet | flags | voir 3.3 |
+- Octets 0 a 2 : **latitude**
+  Entier signe, big-endian, complement a 2.
 
-### 3.2 Facteur d'échelle
+- Octets 3 a 5 : **longitude**
+  Entier signe, big-endian, complement a 2.
 
-```
-valeur_entiere = round(degres * 10000)
-degres         = valeur_entiere / 10000
-```
+- Octet 6 : **flags**
+  Voir section 4.3.
 
-| | Plage en degrés | Plage entière | Capacité 3 octets signés |
-|---|---|---|---|
-| Latitude | -90 à +90 | -900 000 à +900 000 | -8 388 608 à +8 388 607 |
-| Longitude | -180 à +180 | -1 800 000 à +1 800 000 | idem |
+### 4.2 Facteur d'echelle
 
-Résolution obtenue : `0.0001°`, soit environ **11 mètres**. Suffisant pour un suivi de véhicule.
+    valeur_entiere = round(degres * 10000)
+    degres         = valeur_entiere / 10000
 
-> Ne pas utiliser un facteur `100000` : la latitude atteindrait 9 000 000 et
-> **déborderait** la capacité de 3 octets signés.
+Verification des plages :
 
-### 3.3 Octet de flags (offset 6)
+- Latitude : -90 a +90 degres, soit -900 000 a +900 000 en entier.
+- Longitude : -180 a +180 degres, soit -1 800 000 a +1 800 000 en entier.
+- Capacite d'un entier signe sur 3 octets : -8 388 608 a +8 388 607.
 
-| Bit | Nom | Signification |
-|---|---|---|
-| 0 | `moving` | 1 = véhicule en mouvement (interruption accéléromètre) |
-| 1 | `fix` | 1 = fix GNSS valide |
-| 2-7 | réservés | mis à 0 |
+Les deux tiennent largement. Resolution obtenue : `0.0001` degre,
+soit environ **11 metres**. Suffisant pour un suivi de vehicule.
 
-### 3.4 Encodage — End-Device (MicroPython)
+Attention : ne pas utiliser un facteur `100000`. La latitude atteindrait
+9 000 000 et **deborderait** la capacite de 3 octets signes.
+
+### 4.3 Octet de flags (offset 6)
+
+- Bit 0 — `moving` : 1 = vehicule en mouvement (interruption accelerometre)
+- Bit 1 — `fix` : 1 = fix GNSS valide
+- Bits 2 a 7 — reserves, mis a 0
+
+### 4.4 Encodage cote End-Device (MicroPython)
 
 ```python
 import struct
@@ -131,7 +168,7 @@ def encode_position(lat, lon, moving=1, fix=1):
     )
 ```
 
-### 3.5 Décodage — TTN (Payload formatter > Uplink)
+### 4.5 Decodage cote TTN (Payload formatters > Uplink)
 
 ```javascript
 function decodeUplink(input) {
@@ -139,7 +176,7 @@ function decodeUplink(input) {
 
   function toInt24(hi, mid, lo) {
     var v = (hi << 16) | (mid << 8) | lo;
-    if (v & 0x800000) { v -= 0x1000000; }   // complément à 2
+    if (v & 0x800000) { v -= 0x1000000; }   // complement a 2
     return v;
   }
 
@@ -158,99 +195,106 @@ function decodeUplink(input) {
 }
 ```
 
-**Le champ `data` produit ici doit porter les mêmes noms `lat` / `lon` que la section 2.**
-C'est ce qui permet au flow Node-RED de fonctionner à l'identique en WiFi et en LoRaWAN.
+Point important : le champ `data` produit ici porte les memes noms `lat` et `lon`
+que le JSON de la section 3. C'est volontaire. Cela permet au flow Node-RED ecrit
+pour l'etape 2 de fonctionner a l'identique a l'etape 7, quand les donnees
+arriveront par LoRaWAN au lieu du WiFi. Aucune reecriture necessaire.
+
 
 ---
 
-## 4. Payload binaire LoRa — trame descendante (étapes 10 et 11)
+## 5. Payload binaire LoRa — trame descendante (etapes 10 et 11)
 
-Commande envoyée depuis la page web vers le End-Device. **1 octet.**
+Commande envoyee depuis la page web vers le End-Device. Un seul octet.
 
-| Valeur | Nom | Effet sur le End-Device |
-|---|---|---|
-| `0x00` | `SLEEP` | passage en mode faible consommation (deep sleep) |
-| `0x01` | `WAKE` | reprise du suivi, réactivation GNSS + LoRaWAN |
+- `0x00` — `SLEEP` : passage en mode faible consommation (deep sleep)
+- `0x01` — `WAKE` : reprise du suivi, reactivation GNSS et LoRaWAN
 
-### 4.1 Paramètres d'envoi
+Parametres d'envoi :
 
-| Paramètre | Valeur |
-|---|---|
-| Port LoRaWAN (`f_port`) | `1` |
-| Priorité | `NORMAL` |
-| Mode | non confirmé (`confirmed: false`) |
+- Port LoRaWAN (`f_port`) : `1`
+- Priorite : `NORMAL`
+- Mode : non confirme, `confirmed: false`
 
-### 4.2 Décodage — TTN (Payload formatter > Downlink)
+Encodage cote TTN (Payload formatters > Downlink) :
 
 ```javascript
 function encodeDownlink(input) {
   return {
-    bytes:  [input.data.cmd === "sleep" ? 0x00 : 0x01],
-    fPort:  1,
+    bytes:    [input.data.cmd === "sleep" ? 0x00 : 0x01],
+    fPort:    1,
     warnings: []
   };
 }
 ```
 
-> Un downlink n'est transmis qu'**après un uplink** du End-Device (classe A).
-> Le délai peut donc atteindre plusieurs minutes. Ce n'est pas un bug.
+A savoir : un downlink n'est transmis qu'**apres un uplink** du End-Device,
+car celui-ci est en classe A. Le delai peut donc atteindre plusieurs minutes.
+Ce n'est pas un bug, ne cherchez pas.
+
 
 ---
 
-## 5. Format attendu par Node-RED (worldmap)
+## 6. Format attendu par Node-RED (worldmap)
 
-Le nœud `worldmap` n'accepte pas le JSON des sections 2 et 3 tel quel.
-Un nœud `function` fait la conversion :
+Le noeud `worldmap` n'accepte pas le JSON des sections 3 et 4 tel quel.
+Un noeud `function` fait la conversion :
 
 ```javascript
 msg.payload = {
-    name: "Vehicule groupeX",
-    lat:  msg.payload.lat,
-    lon:  msg.payload.lon,
-    icon: "car",
+    name:      "Vehicule groupeX",
+    lat:       msg.payload.lat,
+    lon:       msg.payload.lon,
+    icon:      "car",
     iconColor: msg.payload.moving ? "red" : "gray"
 };
 return msg;
 ```
 
-Carte accessible sur `http://<ip-rpi>:1880/worldmap`.
+Carte accessible sur :
+
+    http://<ip-rpi>:1880/worldmap
+
 
 ---
 
-## 6. Contrainte de duty cycle — à respecter dans tout code d'émission
+## 7. Contrainte de duty cycle
 
-La réglementation EU868 impose un duty cycle de **1 %** : après chaque émission,
-le End-Device doit rester silencieux pendant **99 fois** la durée de cette émission.
+A respecter dans tout code d'emission.
 
-```
-temps_attente = temps_emission * 99
-```
+La reglementation EU868 impose un duty cycle de **1 %** : apres chaque emission,
+le End-Device doit rester silencieux pendant **99 fois** la duree de cette emission.
 
-| Spreading Factor | Temps d'émission (7 octets) | Attente minimale |
-|---|---|---|
-| SF7 | ~50 ms | ~5 s |
-| SF9 | ~185 ms | ~18 s |
-| SF12 | ~1 400 ms | ~2 min 20 s |
+    temps_attente = temps_emission * 99
 
-Vérifier avant d'écrire la boucle d'envoi :
+Ordres de grandeur pour une trame de 7 octets :
+
+- SF7 : environ 50 ms d'emission, donc environ 5 s d'attente
+- SF9 : environ 185 ms d'emission, donc environ 18 s d'attente
+- SF12 : environ 1 400 ms d'emission, donc environ 2 min 20 s d'attente
+
+A verifier avant d'ecrire la boucle d'envoi :
 https://avbentem.github.io/airtime-calculator/ttn/eu868
 
-La pile LoRa du module **bloque d'elle-même** les émissions trop rapprochées.
-Un `send()` qui semble ne rien faire vient presque toujours de là.
+La pile LoRa du module bloque d'elle-meme les emissions trop rapprochees.
+Un `send()` qui semble ne rien faire vient presque toujours de la.
+
 
 ---
 
-## 7. Procédure de modification
+## 8. Procedure de modification
 
-Ce contrat est partagé : le modifier unilatéralement casse le travail des autres pôles.
+Ce contrat est partage. Le modifier unilateralement casse le travail des autres poles.
 
 1. Annoncer le changement au groupe **avant** de coder.
-2. Mettre à jour ce fichier et incrémenter la version.
+2. Mettre a jour ce fichier et incrementer le numero de version.
 3. Commiter le fichier **seul**, avec un message `interface: <description>`.
-4. Prévenir les pôles impactés.
+4. Prevenir les poles impactes.
 
-### Journal des versions
+Journal des versions :
 
-| Version | Date | Modification | Auteur |
-|---|---|---|---|
-| 1.0 | 2026-09-22 | Création — topics, JSON, trames montante et descendante | équipe |
+- **1.1** — 2026-09-22 — Suppression des tableaux, passage en listes pour la
+  lisibilite dans l'editeur VS Code. Contenu technique inchange.
+
+- **1.0** — 2026-09-22 — Creation. Topics MQTT, payload JSON, trame montante
+  sur 7 octets, trame descendante, format worldmap, duty cycle.

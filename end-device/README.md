@@ -32,8 +32,7 @@ A la mise sous tension, la LED du module doit clignoter en bleu.
 Installer l'extension **Pymakr**. Elle a besoin de **Node.js** sur le
 poste : sans lui elle ne demarre pas, et sans message d'erreur clair.
 
-Reperer le port serie de la carte, puis le renseigner dans `pymakr.conf`
-a la racine du depot :
+Reperer le port serie de la carte :
 
 - Windows : `COM3`, `COM4`, ...
 - Linux : `/dev/ttyACM0` ou `/dev/ttyUSB0`
@@ -81,8 +80,34 @@ La procedure complete est dans `lib/README.md`.
 
 ## 4. Envoi et execution
 
-Dans Pymakr, bouton **Upload** : le contenu de `end-device/` part vers
-`/flash/` sur le module.
+Le fichier `pymakr.conf` est place dans `end-device/`, et non a la racine
+du depot. C'est volontaire : pour Pymakr 2.x, le projet est le dossier qui
+contient `pymakr.conf`, et son contenu est copie tel quel dans `/flash/`.
+
+Si vous ajoutez le projet depuis la racine `SAE5.01`, Pymakr envoie tout le
+depot sur la carte : vous vous retrouvez avec `/flash/end-device/lib/` au
+lieu de `/flash/lib/`, et les imports echouent. Dans la section **Projects**
+de Pymakr, le projet a selectionner est donc `end-device`.
+
+Puis **ADD DEVICES**, choisir le port de la carte, et lancer la
+synchronisation avec la fleche vers le haut.
+
+Recuperer d'abord le contenu de la carte avec la fleche vers le bas : le
+bouton de synchronisation ecrase les fichiers de meme nom, et un programme
+peut deja etre present sur le module.
+
+## 4 bis. Rattraper une synchronisation partie de la racine
+
+Si les libs se retrouvent dans `/flash/end-device/lib/`, pas besoin de tout
+recommencer. Copiez-les au bon endroit depuis le REPL :
+
+    open('/flash/lib/L76GNSS.py','wb').write(open('/flash/end-device/lib/L76GNSS.py','rb').read())
+    open('/flash/lib/pycoproc_1.py','wb').write(open('/flash/end-device/lib/pycoproc_1.py','rb').read())
+
+Chaque ligne affiche le nombre d'octets ecrits : 4126 puis 10622.
+
+Pour faire le menage ensuite, `uos.remove()` supprime un fichier et
+`uos.rmdir()` un dossier vide.
 
 Le script ne se lance pas seul tant qu'il s'appelle `main_gnss.py`. Pour
 le demarrer a la main dans le REPL :

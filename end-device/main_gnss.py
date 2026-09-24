@@ -14,17 +14,6 @@ Libs requises dans /flash/lib : voir lib/README.md
 
 import time
 import pycom
-from network import WLAN
-import machine
-
-
-wlan = WLAN(mode=WLAN.STA)
-wlan.connect(ssid="Chompy", auth=(WLAN.WPA2, 'darkAmbush'))
-while not wlan.isconnected():
-    machine.idle()
-print("Wifi connected successfully")
-print(wlan.ifconfig())
-
 
 # Le nom de la lib du coprocesseur depend de la version de la carte :
 # pycoproc_1 pour les Pytrack/Pysense v1, pycoproc_2 pour les v2.

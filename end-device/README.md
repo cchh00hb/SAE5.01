@@ -9,8 +9,13 @@ Livrable : la fonction `get_position()` de `main_gnss.py`, qui renvoie
 
 ## 1. Montage
 
-Poser le module FiPy sur la carte Pytrack. La LED RGB du module se place
-du cote du connecteur USB — verifiez la serigraphie imprimee sur la carte.
+Poser le module LoPy4 ou FiPy sur la carte Pytrack. La LED RGB du module
+se place du cote du connecteur USB — verifiez la serigraphie imprimee sur
+la carte.
+
+Les deux modules conviennent pour ce projet. La LoPy4 a le WiFi et le LoRa,
+c'est tout ce dont on a besoin. Elle n'a pas le modem cellulaire de la FiPy,
+mais les etapes qui l'utilisaient sont hors sujet.
 
 Brancher le cable USB sur la Pytrack, pas sur le module.
 
@@ -45,7 +50,27 @@ Verifier la liaison dans le REPL Pymakr :
     import os
     print(os.uname())
 
-Vous devez voir le nom du module et la version du firmware.
+Vous devez voir le nom du module et la version du firmware, par exemple :
+
+    (sysname='LoPy4', nodename='LoPy4', release='1.20.2.r6', ...)
+
+
+## 2 bis. Desactiver Pybytes
+
+Si la banniere de demarrage affiche une ligne `Pybytes Version`, le service
+cloud de Pycom est actif sur la carte. Il tente de prendre le WiFi et le
+LoRa au demarrage et entre en conflit avec notre code, aux etapes 1 et 3.
+
+A desactiver une fois pour toutes :
+
+    import pycom
+    pycom.pybytes_on_boot(False)
+
+Puis `Ctrl+D` pour redemarrer. La ligne `Pybytes Version` doit avoir
+disparu de la banniere.
+
+Symptomes si vous oubliez : le WiFi se connecte a un reseau que vous n'avez
+pas choisi, ou le join LoRaWAN de l'etape 3 echoue sans message clair.
 
 
 ## 3. Bibliotheques

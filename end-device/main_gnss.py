@@ -8,7 +8,7 @@ uniquement a prouver que le GNSS fonctionne (etape 1, premiere moitie).
 La fonction get_position() est le livrable de la phase B. Elle est reprise
 telle quelle par la phase D, qui y branche la publication MQTT.
 
-Materiel : module FiPy monte sur une carte Pytrack.
+Materiel : module LoPy4 ou FiPy monte sur une carte Pytrack.
 Libs requises dans /flash/lib : voir lib/README.md
 """
 

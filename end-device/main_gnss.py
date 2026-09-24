@@ -16,29 +16,29 @@ import time
 
 import pycom
 
-# Le nom de la lib du coprocesseur change selon la version de la carte et
-# de la bibliotheque Pycom installee. On essaie les trois variantes connues
-# plutot que d'imposer une seule version a tout le groupe.
+# Le nom de la lib du coprocesseur depend de la version de la carte :
+# pycoproc_1 pour les Pytrack/Pysense v1, pycoproc_2 pour les v2.
+# On essaie les deux plutot que d'imposer une version a tout le groupe.
 try:
-    from pycoproc_1 import Pycoproc          # Pytrack / Pysense v1
-    _BOARD = Pycoproc.PYTRACK
-    _make_coproc = lambda: Pycoproc(_BOARD)
+    from pycoproc_1 import Pycoproc
 except ImportError:
     try:
-        from pycoproc import Pycoproc        # ancienne lib unifiee
-        _BOARD = Pycoproc.PYTRACK
-        _make_coproc = lambda: Pycoproc(_BOARD)
+        from pycoproc_2 import Pycoproc
     except ImportError:
-        from pytrack import Pytrack          # lib historique
-        _make_coproc = Pytrack
+        from pycoproc import Pycoproc     # ancienne lib unifiee
 
 from L76GNSS import L76GNSS
 
 
 # --- Reglages -------------------------------------------------------------
 
-PERIODE_LECTURE = 2       # secondes entre deux lectures
-TIMEOUT_GNSS    = 30      # secondes avant que la lib abandonne une lecture
+# Duree maximale d'une lecture. La lib scrute le bus I2C en continu pendant
+# ce temps et rend la main des qu'elle capte une trame GNGLL exploitable.
+# 10 s est un compromis : assez long pour attraper une trame, assez court
+# pour afficher regulierement l'avancement pendant la recherche du fix.
+TIMEOUT_GNSS = 10
+
+PERIODE_LECTURE = 2       # pause entre deux lectures, en secondes
 
 # Couleurs de la LED RGB, pour savoir ou on en est sans regarder la console.
 LED_RECHERCHE = 0x7F3300  # orange : pas encore de fix
@@ -50,7 +50,7 @@ LED_FIX       = 0x007F00  # vert   : position valide
 pycom.heartbeat(False)    # on reprend la main sur la LED
 pycom.rgbled(LED_RECHERCHE)
 
-py = _make_coproc()
+py = Pycoproc(Pycoproc.PYTRACK)
 gnss = L76GNSS(py, timeout=TIMEOUT_GNSS)
 
 
@@ -65,6 +65,10 @@ def get_position():
     Le contrat d'interface impose de ne rien publier sans fix valide, d'ou
     le None plutot qu'un couple (0.0, 0.0) qui placerait le vehicule au
     large du golfe de Guinee.
+
+    La conversion depuis le format NMEA (degres-minutes) vers les degres
+    decimaux est deja faite par L76GNSS.coordinates(), il n'y a rien a
+    recalculer ici.
     """
     lat, lon = gnss.coordinates()
 
@@ -72,6 +76,26 @@ def get_position():
         return None
 
     return (lat, lon)
+
+
+def debug_nmea():
+    """
+    Affiche les trames NMEA brutes envoyees par le recepteur, en boucle.
+    A lancer depuis le REPL quand get_position() ne rend jamais de position :
+
+        import main_gnss
+        main_gnss.debug_nmea()
+
+    Si des lignes $GNGGA, $GNGLL, $GPGSV defilent, le recepteur est vivant
+    et correctement cable : il cherche juste encore les satellites. Le champ
+    qui suit l'heure dans $GNGGA vaut 0 tant qu'il n'y a pas de fix.
+
+    Si rien ne s'affiche du tout, le probleme est materiel : module mal
+    enfonce sur la Pytrack, ou mauvaise carte d'extension.
+
+    Ctrl+C pour sortir.
+    """
+    gnss.dump_nmea()
 
 
 def main():

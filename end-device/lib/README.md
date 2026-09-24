@@ -6,32 +6,35 @@ Les deux fichiers ci-dessous sont fournis par Pycom. Ils ne sont pas
 versionnes dans ce depot : chacun les telecharge une fois, ils ne changent
 jamais ensuite.
 
-## Ou les recuperer
+## Les deux fichiers, avec leur chemin exact
 
 Depot officiel : https://github.com/pycom/pycom-libraries
 
+Les deux se trouvent dans le dossier `shields/lib/`.
+
 - `L76GNSS.py`
-  Chemin dans le depot : `pytrack/lib/L76GNSS.py`
-  Role : dialogue avec le recepteur GNSS Quectel L76, decode les trames
-  NMEA et expose la methode `coordinates()`.
+  https://raw.githubusercontent.com/pycom/pycom-libraries/master/shields/lib/L76GNSS.py
+  Role : dialogue en I2C avec le recepteur GNSS Quectel L76, decode les
+  trames NMEA et expose la methode `coordinates()`.
 
 - `pycoproc_1.py`
-  Chemin dans le depot : `pycoproc/pycoproc_1.py`
-  Role : pilote le coprocesseur de la carte Pytrack, qui gere
+  https://raw.githubusercontent.com/pycom/pycom-libraries/master/shields/lib/pycoproc_1.py
+  Role : pilote le coprocesseur PIC de la carte Pytrack, qui gere
   l'alimentation du GNSS, l'accelerometre et les modes basse consommation.
 
-## Variantes possibles
+Sur la page GitHub d'un fichier, le bouton **Raw** donne le contenu brut,
+puis clic droit et Enregistrer sous. Verifiez que le fichier enregistre
+porte bien l'extension `.py` et non `.txt`.
 
-Selon l'age de la carte et de la bibliotheque, le fichier du coprocesseur
-peut s'appeler autrement :
+## Quelle version du coprocesseur
 
-- `pycoproc_1.py` — cartes Pytrack et Pysense v1
-- `pycoproc_2.py` — cartes v2
-- `pycoproc.py` — ancienne bibliotheque unifiee
-- `pytrack.py` — version historique, classe `Pytrack`
+- `pycoproc_1.py` — cartes Pytrack et Pysense **v1**
+- `pycoproc_2.py` — cartes **v2**
 
-`main_gnss.py` essaie ces variantes dans l'ordre, il n'y a donc rien a
-modifier dans le code. Deposez simplement le fichier que vous avez.
+Les deux sont dans `shields/lib/`. En cas de doute prenez `pycoproc_1.py` :
+c'est la version des cartes en salle de TP. `main_gnss.py` essaie les deux
+noms a l'import, il n'y a rien a modifier dans le code selon celui que vous
+avez depose.
 
 ## Verification
 
@@ -40,4 +43,24 @@ Une fois les fichiers envoyes, dans le REPL :
     import os
     print(os.listdir('/flash/lib'))
 
-Vous devez voir `L76GNSS.py` et le fichier du coprocesseur.
+Vous devez voir :
+
+    ['L76GNSS.py', 'pycoproc_1.py']
+
+Si la liste est vide, l'upload Pymakr n'a pas eu lieu ou `sync_folder` ne
+pointe pas sur `end-device`. Le fichier `README.md` de ce dossier n'est pas
+envoye sur la carte : l'extension `md` n'est pas dans `sync_file_types` de
+`pymakr.conf`, c'est voulu, la carte n'a que 4 Mo de flash.
+
+## API utilisee par main_gnss.py
+
+Pour information, verifie dans le code source des libs :
+
+- `Pycoproc(Pycoproc.PYTRACK)` — la constante `PYTRACK` vaut 2
+- `L76GNSS(py, timeout=10)` — `timeout` est la duree maximale d'une lecture
+- `gnss.coordinates()` renvoie un tuple `(latitude, longitude)` en
+  **degres decimaux**, ou `(None, None)` si le timeout expire sans fix.
+  La conversion depuis le format NMEA degres-minutes est faite par la lib,
+  il n'y a rien a recalculer.
+- `gnss.dump_nmea()` affiche les trames brutes, utile pour verifier que le
+  recepteur repond quand aucun fix n'arrive.

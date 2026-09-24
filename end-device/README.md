@@ -140,9 +140,28 @@ les satellites. Il faut au minimum 4 satellites pour un fix. Patientez.
 **La carte ne repond plus dans le REPL.**
 `Ctrl+C` interrompt la boucle. Si rien ne repond, debranchez et rebranchez.
 
-**Coordonnees aberrantes, du genre 4804.764.**
-C'est du format NMEA brut, en degres-minutes. La lib `L76GNSS` fait
-normalement la conversion en degres decimaux. Si vous voyez ces valeurs,
-vous avez une version differente de la lib : divisez la partie minutes par
-60 avant de renvoyer le resultat, et signalez-le au groupe pour mise a
-jour du contrat d'interface.
+**Verifier que le recepteur est vivant.**
+Si aucun fix n'arrive et que vous doutez du cablage, affichez les trames
+brutes depuis le REPL :
+
+    import main_gnss
+    main_gnss.debug_nmea()
+
+Des lignes `$GNGGA`, `$GNGLL`, `$GPGSV` doivent defiler. Dans ce cas le
+recepteur fonctionne et il cherche seulement les satellites : le champ qui
+suit l'heure dans `$GNGGA` vaut 0 tant qu'il n'y a pas de fix.
+
+Si rien ne s'affiche, le probleme est materiel : module mal enfonce sur la
+Pytrack, ou carte d'extension qui n'est pas une Pytrack.
+
+`Ctrl+C` pour sortir.
+
+**Sauvegarder ce qui est deja sur la carte.**
+Le bouton Upload de Pymakr ecrase les fichiers de meme nom. Si un programme
+a ete laisse sur la carte par quelqu'un d'autre, recuperez-le d'abord avec
+le bouton **Download** de Pymakr, qui rapatrie tout le contenu de `/flash`.
+
+Pour voir ce qu'il y a dessus :
+
+    import os
+    print(os.listdir('/flash'))

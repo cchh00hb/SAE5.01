@@ -124,5 +124,20 @@ def main():
         time.sleep(PERIODE_LECTURE)
 
 
+
+# import socket
+#
+# server_ip = '1.1.1.1'
+# server_port = 1111
+#
+# s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+# donnees = "{},{}".format(lat, lon)
+#
+# message = donnees.encode('utf-8')
+# s.sendto(message, (server_ip, server_port))
+# print(message)
+# s.close()
+
+
 if __name__ == "__main__":
     main()

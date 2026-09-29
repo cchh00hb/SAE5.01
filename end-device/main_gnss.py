@@ -12,8 +12,13 @@ Materiel : module LoPy4 ou FiPy monte sur une carte Pytrack.
 Libs requises dans /flash/lib : voir lib/README.md
 """
 
+import socket
 import time
 import pycom
+
+server_ip = '10.72.189.243'
+server_port = 5000
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # Le nom de la lib du coprocesseur depend de la version de la carte :
 # pycoproc_1 pour les Pytrack/Pysense v1, pycoproc_2 pour les v2.
@@ -118,25 +123,16 @@ def main():
                 premier_fix = int(time.time() - debut)
                 print("--- PREMIER FIX obtenu en {} s ---".format(premier_fix))
 
+
             print("lat = {:.5f}   lon = {:.5f}".format(lat, lon))
+            donnees = "{},{}".format(lat, lon)
+            message = donnees.encode('utf-8')
+            s.sendto(message, (server_ip, server_port))
+            print(message)
+            s.close()
             pycom.rgbled(LED_FIX)
 
         time.sleep(PERIODE_LECTURE)
-
-
-
-import socket
-
-server_ip = '10.72.189.243'
-server_port = 5000
-
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-donnees = "{},{}".format(lat, lon)
-
-message = donnees.encode('utf-8')
-s.sendto(message, (server_ip, server_port))
-print(message)
-s.close()
 
 
 if __name__ == "__main__":

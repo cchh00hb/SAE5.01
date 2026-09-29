@@ -53,8 +53,11 @@ except ImportError:
 # 2000 mg / 200 ms sont les valeurs des exemples Pycom : il faut secouer la
 # carte franchement, c'est pratique pour la demo en salle. Pour une vraie
 # voiture il faudra sans doute baisser le seuil : utiliser calibrer().
+# Attention, la gravite compte : au repos un axe mesure deja 1 g (1000 mg).
+# En dessous de ce seuil, verifier que la carte voit encore le repos.
 # Contraintes de la lib (pleine echelle 4 g, 50 Hz) :
-#   seuil entre 32 et 4000 mg, duree entre 160 et 40800 ms.
+#   seuil entre 63 et 8000 mg, par pas de 62,5 mg (2000 donne 1937,5)
+#   duree entre 160 et 40800 ms, par pas de 160 ms (200 donne 160).
 SEUIL_MG = 2000
 DUREE_MS = 200
 

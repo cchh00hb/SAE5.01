@@ -4,6 +4,7 @@ __pycache__/
 
 # Libs Pycom telechargees localement, voir end-device/lib/README.md
 end-device/lib/L76GNSS.py
+end-device/lib/LIS2HH12.py
 end-device/lib/pycoproc*.py
 end-device/lib/pytrack.py
 

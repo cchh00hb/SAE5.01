@@ -6,3 +6,7 @@ __pycache__/
 end-device/lib/L76GNSS.py
 end-device/lib/pycoproc*.py
 end-device/lib/pytrack.py
+
+# Fichiers generes par Pymakr 2.x
+project.pymakr
+.pymakr/

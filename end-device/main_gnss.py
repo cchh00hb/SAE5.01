@@ -1,63 +1,131 @@
 """
-SAE5.01 - Phase B - Acquisition GNSS.
+SAE5.01 - Phase B - Acquisition GNSS et publication MQTT.
 
-Lit la position du recepteur GNSS L76 de la carte Pytrack et l'affiche
-dans la console. Aucune connexion reseau ici : ce script prouve que le
-GNSS fonctionne (etape 1, premiere moitie).
+Lit la position du recepteur GNSS L76 de la carte Pytrack, l'affiche
+dans la console, et la publie sur le broker Mosquitto du poste de
+reception.
 
-La fonction get_position() est le livrable de la phase B. Elle est reprise
-telle quelle par la phase D, qui y branche la publication MQTT.
+Ce script a deux modes d'execution, et doit fonctionner dans les deux :
+  - au boot, si le fichier est renomme en main.py : boot.py connecte le
+    WiFi, puis ce script lit le GNSS et publie ;
+  - a la demande, via "Run file on device" de Pymakr : boot.py n'est alors
+    PAS execute, la connexion WiFi est donc refaite ici.
 
-Outils de diagnostic fournis :
-    etat_gnss()   resume chiffre de ce que recoit l'antenne
-    reparer()     coupure et remise sous tension du recepteur
-    debug_nmea()  trames brutes en continu
+L'acquisition et la publication sont dans le meme fichier, mais restent
+separees : get_position() ne fait que lire, publier_mqtt() ne fait que
+publier. Une phase ulterieure (LoRaWAN via TTN) ne remontera que
+get_position() a autre chose.
 
 Materiel : module LoPy4 ou FiPy monte sur une carte Pytrack.
-Libs requises dans /flash/lib : voir lib/README.md
+Libs requises dans /flash/lib : mqtt.py, L76GNSS.py, pycoproc_1.py et
+pytrack.py. Voir lib/README.md.
 """
 
-import socket
 import time
+
 import pycom
+from mqtt import MQTTClient
+from network import WLAN
 
-server_ip = '10.72.189.243'
-server_port = 5000
-s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-
-# Le nom de la lib du coprocesseur depend de la version de la carte :
-# pycoproc_1 pour les Pytrack/Pysense v1, pycoproc_2 pour les v2.
+# Le pilote du coprocesseur depend de la version de la carte : pycoproc_1
+# pour les Pytrack/Pysense v1, pycoproc_2 pour les v2. On tente la v2 en
+# premier, car c'est celle de la carte de ce projet : son identifiant USB
+# est 04d8:f013, la valeur que pycoproc_2 verifie en lecture du PIC. Un
+# membre du groupe qui a une carte v1 depose pycoproc_1.py en plus, et le
+# repli se fait tout seul.
 try:
-    from pycoproc_1 import Pycoproc
+    from pycoproc_2 import Pycoproc
 except ImportError:
     try:
-        from pycoproc_2 import Pycoproc
+        from pycoproc_1 import Pycoproc
     except ImportError:
-        from pycoproc import Pycoproc     # ancienne lib unifiee
+        # On relance l'erreur telle quelle plutot que d'echouer sur une
+        # troisieme tentative "from pycoproc import Pycoproc" : ce nom
+        # correspond a la vieille lib unifiee, qui n'existe plus dans
+        # pycom/pycom-libraries, et enverrait le groupe chercher un
+        # fichier introuvable.
+        print("ERREUR : aucune lib pycoproc trouvee sur la carte.")
+        print("Depose pycoproc_2.py (Pytrack v2, celle de ce projet)")
+        print("ou pycoproc_1.py (v1) dans end-device/lib/, puis uploade.")
+        raise
 
 from L76GNSS import L76GNSS
+
+
+def ouvrir_coprocesseur():
+    """
+    Instancie le pilote du coprocesseur PIC de la carte, et renvoie l'objet.
+
+    L'appel de construction n'est pas le meme selon la version, ce qui rend
+    un simple Pycoproc(...) impossible a ecrire une fois pour toutes :
+      - v2 : Pycoproc() sans argument. La lib deduit le type de carte du
+        PIC et verifie l'identifiant USB. C'est le cas de la carte de ce
+        projet.
+      - v1 : Pycoproc(Pycoproc.PYTRACK), le type de carte se passant en
+        premier argument.
+
+    On distingue les deux sur la presence de l'attribut de classe PYTRACK,
+    que seule pycoproc_1 definit.
+    """
+    if hasattr(Pycoproc, "PYTRACK"):
+        return Pycoproc(Pycoproc.PYTRACK)
+
+    return Pycoproc()
 
 
 # --- Reglages -------------------------------------------------------------
 
 # Duree maximale d'une lecture. La lib scrute le bus I2C en continu pendant
 # ce temps et rend la main des qu'elle capte une trame GNGLL exploitable.
+# 10 s est un compromis : assez long pour attraper une trame, assez court
+# pour afficher regulierement l'avancement pendant la recherche du fix.
 TIMEOUT_GNSS = 10
 
 PERIODE_LECTURE = 2       # pause entre deux lectures, en secondes
-PERIODE_BILAN   = 30      # un point sur les satellites toutes les N secondes
 
-# Registre PORTC du coprocesseur PIC de la Pytrack, et bit qui commande
-# l'alimentation du recepteur GNSS.
+# Broker Mosquitto du poste de reception. A aligner sur la section 1
+# d'INTERFACE.md (IP fixe du Raspberry Pi, port 1883).
+IP_BROKER = '10.72.189.243'
+PORT_BROKER = 1883
+
+# Topic de publication.
 #
-# Attention au sens : ce bit vaut 1 quand le recepteur est ALIMENTE. Le
-# mettre a 0 coupe le L76, et le bus I2C ne repond alors plus du tout
-# (OSError: I2C bus error). C'est ce que fait Pycoproc.go_to_sleep() pour
-# economiser la batterie. Verifie sur le materiel, pas deduit de la lib.
-PORTC_ADDR    = 0x00E
-BIT_ALIM_GNSS = 7
+# ATTENTION : ce script utilise "gps" comme demande, mais la section 2.1
+# d'INTERFACE.md impose "sae501/groupeX/position". Les deux ne peuvent pas
+# cohabiter : Node-RED et MQTT Box ecoutent le topic du contrat. Changer
+# cette seule constante suffit, mais c'est un ecart au document de
+# reference, il faut donc le trancher en groupe.
+TOPIC_GPS = 'gps'
 
-# Couleurs de la LED RGB, pour suivre l'etat sans regarder la console.
+# Identifiant de client. Doit etre unique : si deux cartes publient avec le
+# meme identifiant, Mosquitto deconnecte la premiere au profit de la
+# seconde. On y met le token de la carte pour l'identifier dans les logs
+# du broker.
+ID_CLIENT = 'sae501-Py72a4c7'
+
+# Mosquitto sur un reseau de TP tourne souvent sans authentification. Si le
+# broker exige un couple, renseigner ces deux constantes.
+UTILISATEUR = None
+MOT_DE_PASSE_BROKER = None
+
+# mqtt.py n'a aucun mecanisme de reconnexion, la boucle doit s'en charger.
+MQTT_TENTATIVES = 5        # essais de connexion d'affilee
+MQTT_PAUSE = 3             # pause entre deux essais, en secondes
+
+# Meme reseau que boot.py, duplique ici pour que le mode "Run file on
+# device" fonctionne seul. boot.py n'etant pas execute dans ce mode, la
+# connexion doit etre capable de se faire depuis ce fichier. A factoriser
+# dans un module commun des qu'un autre script en a besoin.
+SSID = 'Chompy'
+MOT_DE_PASSE = 'darkAmbush'
+
+# keepalive a 0, et c'est volontaire. mqtt.py n'envoie jamais de PINGREQ
+# tout seul (il faudrait appeler ping() a la main) : annoncer un keepalive
+# non nul au broker le garantit mort au bout de 1,5 fois ce delai, alors
+# qu'avec 0 il ne peut pas nous expulser. A changer seulement si l'on
+# ajoute les ping() periodiques.
+
+# Couleurs de la LED RGB, pour savoir ou on en est sans regarder la console.
 LED_RECHERCHE = 0x7F3300  # orange : pas encore de fix
 LED_FIX       = 0x007F00  # vert   : position valide
 
@@ -67,8 +135,75 @@ LED_FIX       = 0x007F00  # vert   : position valide
 pycom.heartbeat(False)    # on reprend la main sur la LED
 pycom.rgbled(LED_RECHERCHE)
 
-py = Pycoproc(Pycoproc.PYTRACK)
+py = ouvrir_coprocesseur()
 gnss = L76GNSS(py, timeout=TIMEOUT_GNSS)
+
+
+# --- Connexion ------------------------------------------------------------
+
+def connecter_wifi():
+    """
+    Connecte le WiFi s'il ne l'est pas deja. Renvoie True si la connexion
+    est etablie a la sortie.
+
+    Au boot, boot.py a deja fait le travail : le test renvoie True et on ne
+    touche a rien. Lance via "Run file on device", boot.py n'a pas ete
+    execute et la publication MQTT echouerait sans cette connexion.
+    """
+    wlan = WLAN(mode=WLAN.STA)
+
+    if wlan.isconnected():
+        print("WiFi deja connecte : {}".format(wlan.ifconfig()))
+        return True
+
+    print("Connexion au WiFi {}...".format(SSID))
+    wlan.connect(ssid=SSID, auth=(WLAN.WPA2, MOT_DE_PASSE))
+
+    # boot.py boucle sur machine.idle(), sans limite. On borne l'attente
+    # pour ne pas rester bloque indefiniment si le reseau de TP est
+    # indisponible : le GNSS reste lisible hors ligne, autant le garder.
+    for _ in range(20):
+        if wlan.isconnected():
+            print("WiFi connecte : {}".format(wlan.ifconfig()))
+            return True
+        time.sleep(1)
+
+    print("ECHEC : WiFi non connecte apres 20 s.")
+    print("Sans reseau, la position s'affiche mais ne part pas en MQTT.")
+    return False
+
+
+def connecter_mqtt():
+    """
+    Ouvre une session MQTT sur le broker. Renvoie le client, ou None si le
+    broker reste injoignable apres MQTT_TENTATIVES essais.
+
+    Le client est construit ici et pas au niveau du module : son
+    constructeur appelle socket.getaddrinfo(), qui echoue si le WiFi n'est
+    pas encore monte. C'est aussi pour cela que connecter_wifi() doit
+    passer avant, y compris au boot ou boot.py s'en est charge.
+    """
+    for essai in range(1, MQTT_TENTATIVES + 1):
+        try:
+            client = MQTTClient(ID_CLIENT, IP_BROKER, port=PORT_BROKER,
+                                user=UTILISATEUR,
+                                password=MOT_DE_PASSE_BROKER,
+                                keepalive=0)
+            client.connect()
+
+            print("MQTT connecte a {}:{} (topic {})".format(
+                IP_BROKER, PORT_BROKER, TOPIC_GPS))
+            return client
+
+        except Exception as e:
+            # Attrape large : selon la cause on peut voir une erreur
+            # reseau, un refus d'authentification du broker, ou un echec
+            # de resolution de nom si l'IP est erronee.
+            print("MQTT echec, essai {}/{} : {}".format(
+                essai, MQTT_TENTATIVES, e))
+            time.sleep(MQTT_PAUSE)
+
+    return None
 
 
 # --- Acquisition ----------------------------------------------------------
@@ -78,13 +213,17 @@ def get_position():
     Renvoie (latitude, longitude) en degres decimaux, ou None si le
     recepteur n'a pas encore de fix.
 
-    C'est cette fonction que la phase D appellera avant de publier en MQTT.
+    Elle ne publie rien : la lecture et la publication sont separees. Une
+    phase ulterieure (LoRaWAN via TTN) reutilisera cette fonction telle
+    quelle, en remplacant publier_mqtt().
+
     Le contrat d'interface impose de ne rien publier sans fix valide, d'ou
     le None plutot qu'un couple (0.0, 0.0) qui placerait le vehicule au
     large du golfe de Guinee.
 
     La conversion depuis le format NMEA (degres-minutes) vers les degres
-    decimaux est deja faite par L76GNSS.coordinates().
+    decimaux est deja faite par L76GNSS.coordinates(), il n'y a rien a
+    recalculer ici.
     """
     lat, lon = gnss.coordinates()
 
@@ -94,240 +233,120 @@ def get_position():
     return (lat, lon)
 
 
-# --- Diagnostic -----------------------------------------------------------
-
-def alimentation_gnss():
+def publier_mqtt(client, position):
     """
-    Renvoie True si le coprocesseur alimente le recepteur GNSS.
+    Publie la position sur TOPIC_GPS. Renvoie True si le message est parti.
 
-    Un False ici explique a lui seul une absence totale de trames et des
-    OSError sur le bus I2C.
+    lat et lon sont ecrits comme nombres JSON et non comme chaines, ce
+    qu'attend la section 3 d'INTERFACE.md et ce que Node-RED peut exploiter
+    sans conversion. Le format reste le degree decimal, la conversion depuis
+    le NMEA ayant deja ete faite par L76GNSS.coordinates().
+
+    Aucun message n'est publie sans fix : l'appelant n'arrive pas ici si
+    get_position() a rendu None, comme l'impose le contrat.
     """
-    return bool(py.peek_memory(PORTC_ADDR) & (1 << BIT_ALIM_GNSS))
+    lat, lon = position
+    payload = '{{"lat": {:.5f}, "lon": {:.5f}}}'.format(lat, lon)
 
-
-def _collecte_nmea(duree=5):
-    """
-    Lit le bus pendant `duree` secondes et renvoie la liste des trames
-    NMEA completes recues, sous forme de chaines.
-    """
-    tampon = b''
-    trames = []
-    depart = time.time()
-
-    while time.time() - depart < duree:
-        try:
-            tampon += gnss._read()
-        except OSError:
-            time.sleep(0.2)
-            continue
-
-        while b'\r\n' in tampon:
-            brute, tampon = tampon.split(b'\r\n', 1)
-            try:
-                ligne = brute.decode('ascii').strip()
-            except Exception:
-                continue
-            if ligne.startswith('$'):
-                trames.append(ligne)
-
-        # Une trame NMEA fait au plus 82 caracteres : au-dela, ce qui reste
-        # dans le tampon est un debut de trame tronque, on ne garde que lui.
-        if len(tampon) > 512:
-            tampon = tampon[-82:]
-
-        time.sleep(0.05)
-
-    return trames
-
-
-def etat_gnss(duree=5):
-    """
-    Resume chiffre de ce que recoit l'antenne. Renvoie un dictionnaire :
-
-        alimente       le recepteur est-il sous tension
-        trames         nombre de trames NMEA lues pendant la mesure
-        sats_vue       satellites detectes, toutes constellations
-        sats_utilises  satellites servant au calcul de position
-        qualite        0 = pas de fix, 1 = fix GPS, 2 = fix differentiel
-
-    Lecture des resultats :
-
-        trames a 0                 le recepteur ne repond pas
-        trames > 0 et sats_vue 0   il fonctionne mais ne recoit aucun signal
-        sats_vue > 0, qualite 0    acquisition en cours, le fix approche
-        qualite >= 1               position valide
-    """
-    trames = _collecte_nmea(duree)
-
-    vue = {}
-    sats_utilises = 0
-    qualite = 0
-
-    for trame in trames:
-        champs = trame.split(',')
-        entete = champs[0]
-
-        if entete.endswith('GSV') and len(champs) > 3:
-            # Une constellation par talker : GP pour GPS, GL pour GLONASS,
-            # GA pour Galileo. On garde le dernier compte annonce par chacun.
-            talker = entete[1:3]
-            try:
-                vue[talker] = int(champs[3])
-            except ValueError:
-                pass
-
-        elif entete.endswith('GGA') and len(champs) > 7:
-            try:
-                qualite = int(champs[6]) if champs[6] else 0
-                sats_utilises = int(champs[7]) if champs[7] else 0
-            except ValueError:
-                pass
-
-    return {
-        'alimente': alimentation_gnss(),
-        'trames': len(trames),
-        'sats_vue': sum(vue.values()),
-        'sats_utilises': sats_utilises,
-        'qualite': qualite,
-    }
-
-
-def diagnostic(duree=5):
-    """Affiche l'etat du recepteur en clair. A lancer depuis le REPL."""
-    etat = etat_gnss(duree)
-
-    print("alimentation    :", "oui" if etat['alimente'] else "NON")
-    print("trames NMEA     :", etat['trames'])
-    print("satellites vus  :", etat['sats_vue'])
-    print("satellites util.:", etat['sats_utilises'])
-    print("qualite du fix  :", etat['qualite'])
-
-    if not etat['alimente']:
-        print("-> recepteur hors tension, lancer reparer()")
-    elif etat['trames'] == 0:
-        print("-> aucune trame, bus I2C muet, lancer reparer()")
-    elif etat['sats_vue'] == 0:
-        print("-> recepteur vivant mais aucun signal recu")
-        print("   sortir a ciel ouvert, puis lancer reparer()")
-    elif etat['qualite'] == 0:
-        print("-> acquisition en cours, laisser tourner")
-    else:
-        print("-> fix valide")
-
-    return etat
-
-
-# --- Reparation -----------------------------------------------------------
-
-def envoyer_pmtk(commande, essais=5):
-    """
-    Envoie une commande PMTK au recepteur, avec reessais.
-
-    Le bus I2C refuse souvent la premiere ecriture quand le recepteur vient
-    de demarrer, d'ou la boucle.
-    """
-    for _ in range(essais):
-        try:
-            gnss.write(commande)
-            return True
-        except OSError:
-            time.sleep(0.5)
-    return False
-
-
-def reparer():
-    """
-    Coupe puis reremet l'alimentation du recepteur, et le force en mode
-    pleine puissance avec un demarrage a froid.
-
-    C'est le seul moyen, depuis le logiciel, de sortir le L76 d'un mode
-    basse consommation ou d'une configuration laissee par un programme
-    precedent. La coupure d'alimentation efface tout etat interne.
-
-    Compter deux a trois minutes a ciel ouvert apres l'appel avant de
-    conclure quoi que ce soit.
-    """
-    print("coupure de l'alimentation du recepteur")
-    py.mask_bits_in_memory(PORTC_ADDR, ~(1 << BIT_ALIM_GNSS))
-    time.sleep(3)
-
-    print("remise sous tension")
-    py.set_bits_in_memory(PORTC_ADDR, 1 << BIT_ALIM_GNSS)
-    time.sleep(5)
-
-    if not alimentation_gnss():
-        print("ECHEC : le recepteur n'est pas repasse sous tension")
+    try:
+        client.publish(TOPIC_GPS, payload)
+    except Exception as e:
+        # Une session cassee (coupure WiFi, broker redemarre) leve ici a
+        # chaque envoi. On se contente de le signaler, c'est main() qui
+        # decide de rouvrir une session.
+        print("publication impossible : {}".format(e))
         return False
 
-    # PMTK225,0 sort des modes periodiques type AlwaysLocate, qui mettent la
-    # radio en veille la plupart du temps. PMTK104 force un demarrage a
-    # froid complet : almanach, ephemerides et position approchee effaces.
-    print("mode pleine puissance :", "ok" if envoyer_pmtk('PMTK225,0') else "refuse")
-    time.sleep(1)
-    print("demarrage a froid     :", "ok" if envoyer_pmtk('PMTK104') else "refuse")
-    time.sleep(5)
-
-    return diagnostic()
+    print("publie : {}".format(payload))
+    return True
 
 
 def debug_nmea():
     """
-    Affiche les trames NMEA brutes en continu. Ctrl+C pour sortir.
+    Affiche les trames NMEA brutes envoyees par le recepteur, en boucle.
+    A lancer depuis le REPL quand get_position() ne rend jamais de position :
 
-    Preferer diagnostic(), qui donne le meme constat en trois lignes.
+        import main_gnss
+        main_gnss.debug_nmea()
+
+    Si des lignes $GNGGA, $GNGLL, $GPGSV defilent, le recepteur est vivant
+    et correctement cable : il cherche juste encore les satellites. Le champ
+    qui suit l'heure dans $GNGGA vaut 0 tant qu'il n'y a pas de fix.
+
+    Si rien ne s'affiche du tout, le probleme est materiel : module mal
+    enfonce sur la Pytrack, ou mauvaise carte d'extension.
+
+    L'import execute l'initialisation GNSS mais pas main(), grace au
+    garde-fou __main__, et n'ouvre aucune session MQTT.
+
+    Ctrl+C pour sortir.
     """
     gnss.dump_nmea()
 
 
-# --- Boucle principale ----------------------------------------------------
-
 def main():
-    depart = time.time()
+    debut = time.time()
     premier_fix = None
-    dernier_bilan = 0
+    publies = 0
+    client = None
+
+    if not connecter_wifi():
+        # MQTT repose sur TCP : sans reseau il n'y a rien a tenter. On sort
+        # plutot que de boucler indefiniment sur un echec deja connu.
+        print("Abandon : pas de WiFi, la publication MQTT est impossible.")
+        return
+
+    client = connecter_mqtt()
 
     print("Recherche du fix GNSS en cours.")
-    print("Compter 5 a 15 minutes au premier demarrage, a ciel ouvert.")
+    print("Comptez 5 a 15 minutes au premier demarrage, pres d'une fenetre.")
 
-    if not alimentation_gnss():
-        print("ATTENTION : le recepteur est hors tension, lancer reparer()")
+    try:
+        while True:
+            position = get_position()
 
-    while True:
-        position = get_position()
-        ecoule = int(time.time() - depart)
+            if position is None:
+                attente = int(time.time() - debut)
+                print("pas de fix ({} s ecoulees)".format(attente))
+                pycom.rgbled(LED_RECHERCHE)
+                time.sleep(PERIODE_LECTURE)
+                continue
 
-        if position is None:
-            print("pas de fix ({} s ecoulees)".format(ecoule))
-            pycom.rgbled(LED_RECHERCHE)
-
-            # Sans ce bilan, l'attente est aveugle : on ne sait pas
-            # distinguer une acquisition qui progresse d'une antenne qui ne
-            # recoit rien.
-            if ecoule - dernier_bilan >= PERIODE_BILAN:
-                dernier_bilan = ecoule
-                etat = etat_gnss(duree=2)
-                print("   bilan : {} trames, {} satellites en vue".format(
-                    etat['trames'], etat['sats_vue']))
-                if etat['sats_vue'] == 0:
-                    print("   aucun signal recu, voir diagnostic() et reparer()")
-        else:
             lat, lon = position
 
             if premier_fix is None:
-                premier_fix = ecoule
+                premier_fix = int(time.time() - debut)
                 print("--- PREMIER FIX obtenu en {} s ---".format(premier_fix))
 
-
             print("lat = {:.5f}   lon = {:.5f}".format(lat, lon))
-            donnees = "{},{}".format(lat, lon)
-            message = donnees.encode('utf-8')
-            s.sendto(message, (server_ip, server_port))
-            print(message)
-            s.close()
             pycom.rgbled(LED_FIX)
 
-        time.sleep(PERIODE_LECTURE)
+            if client is None:
+                client = connecter_mqtt()
+
+            if client is not None and publier_mqtt(client, position):
+                publies += 1
+            else:
+                # Une session cassee ne se relance pas toute seule, et la
+                # republier en boucle ne servirait a rien. On la jette :
+                # le tour suivant rouvrira une connexion neuve, et la
+                # position en cours est perdue de toute facon.
+                client = None
+
+            time.sleep(PERIODE_LECTURE)
+
+    except KeyboardInterrupt:
+        print("Arret sur Ctrl+C, {} message(s) publie(s).".format(publies))
+
+    finally:
+        # Un seul point de sortie, donc un seul disconnect. Il echoue aussi
+        # sur une session cassee, d'ou le rattrapage : sans lui, le Ctrl+C
+        # se terminerait sur une traceback au lieu du resume final.
+        if client is not None:
+            try:
+                client.disconnect()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

@@ -165,21 +165,53 @@ les satellites. Il faut au minimum 4 satellites pour un fix. Patientez.
 **La carte ne repond plus dans le REPL.**
 `Ctrl+C` interrompt la boucle. Si rien ne repond, debranchez et rebranchez.
 
-**Verifier que le recepteur est vivant.**
-Si aucun fix n'arrive et que vous doutez du cablage, affichez les trames
-brutes depuis le REPL :
+**Aucun fix apres plusieurs minutes : faire un diagnostic.**
 
     import main_gnss
+    main_gnss.diagnostic()
+
+La commande lit le bus pendant cinq secondes et rend cinq chiffres :
+
+    alimentation    : oui
+    trames NMEA     : 32
+    satellites vus  : 0
+    satellites util.: 0
+    qualite du fix  : 0
+
+Comment les lire :
+
+- `alimentation : NON` — le coprocesseur ne fournit pas de tension au
+  recepteur. Un programme precedent a appele `go_to_sleep()` et le bit n'a
+  pas ete remis. Lancer `reparer()`.
+- `trames NMEA : 0` — le bus I2C est muet. Module mal enfonce sur la
+  Pytrack, ou carte d'extension qui n'est pas une Pytrack. Lancer
+  `reparer()`, puis verifier le montage.
+- `satellites vus : 0` avec des trames qui arrivent — le recepteur
+  fonctionne mais son antenne ne recoit rien. Sortir a ciel ouvert, puis
+  `reparer()`. Si le compte reste a zero dehors apres trois minutes,
+  essayer une autre Pytrack.
+- `satellites vus` superieur a 0 et `qualite : 0` — l'acquisition
+  progresse, il n'y a qu'a attendre.
+- `qualite : 1` ou plus — la position est valide.
+
+**Remettre le recepteur a zero.**
+
+    main_gnss.reparer()
+
+Coupe l'alimentation du L76 pendant trois secondes, la retablit, puis force
+le mode pleine puissance et un demarrage a froid. C'est le seul moyen,
+depuis le logiciel, de sortir le recepteur d'un mode basse consommation ou
+d'une configuration laissee par un programme precedent : la coupure efface
+tout son etat interne.
+
+Compter deux a trois minutes a ciel ouvert apres l'appel avant de conclure.
+
+**Voir les trames brutes.**
+
     main_gnss.debug_nmea()
 
-Des lignes `$GNGGA`, `$GNGLL`, `$GPGSV` doivent defiler. Dans ce cas le
-recepteur fonctionne et il cherche seulement les satellites : le champ qui
-suit l'heure dans `$GNGGA` vaut 0 tant qu'il n'y a pas de fix.
-
-Si rien ne s'affiche, le probleme est materiel : module mal enfonce sur la
-Pytrack, ou carte d'extension qui n'est pas une Pytrack.
-
-`Ctrl+C` pour sortir.
+`Ctrl+C` pour sortir. `diagnostic()` donne le meme constat en trois lignes,
+c'est en general suffisant.
 
 **Sauvegarder ce qui est deja sur la carte.**
 Le bouton Upload de Pymakr ecrase les fichiers de meme nom. Si un programme

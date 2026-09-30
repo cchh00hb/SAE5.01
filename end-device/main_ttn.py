@@ -50,7 +50,7 @@ PERIODE_LECTURE = 10
 
 
 # ---------------------------------------------------------------------------
-# Gateway du professeur
+# Gateway
 # ---------------------------------------------------------------------------
 
 # Ces informations servent a identifier le gateway utilise par le projet.
@@ -77,11 +77,6 @@ DEV_EUI = "70B3D57ED0079375"
 
 # Port applicatif LoRaWAN.
 LORA_PORT = 1
-
-# Facteur d'echelle de la charge utile, voir INTERFACE.md section 4.2.
-# Les degres decimaux sont multiplies par cette valeur puis arrondis, de
-# facon a tenir dans un entier signe sur 3 octets.
-FACTEUR_ECHELLE = 10000
 
 
 # ---------------------------------------------------------------------------
@@ -217,56 +212,32 @@ def get_position():
 # Encodage de la position
 # ---------------------------------------------------------------------------
 
-def _entier_24_bits(valeur):
+def encoder_position(position):
     """
-    Encode un entier signe sur 3 octets, big-endian, complement a deux.
+    Encode latitude et longitude sur 8 octets.
 
-    struct ne connait pas les entiers de 3 octets : on passe par un int32
-    dont on retire l'octet de poids fort. Celui-ci ne porte aucune
-    information tant que la valeur tient dans la plage 24 bits signee, il
-    vaut 0x00 pour un positif et 0xFF pour un negatif.
-    """
+    Latitude :
+        4 octets, int32 signe, latitude * 100000
 
-    if not -8388608 <= valeur <= 8388607:
-        raise ValueError(
-            "valeur {} hors de la plage d'un entier signe sur 3 octets".format(
-                valeur
-            )
-        )
+    Longitude :
+        4 octets, int32 signe, longitude * 100000
 
-    return struct.pack(">i", valeur)[1:]
+    Format :
+        [latitude][longitude]
 
-
-def encoder_position(position, en_mouvement=True, fix_valide=True):
-    """
-    Encode la position sur 7 octets, conformement a INTERFACE.md section 4.
-
-    C'est l'objet de l'etape 8 : reduire la charge utile transmise sur la
-    couche physique LoRa. Latitude et longitude tiennent chacune sur
-    3 octets au lieu de 4, et l'octet de flags remplace les 2 octets
-    economises pour transporter l'etat du vehicule.
-
-    Structure :
-        octets 0-2  latitude   entier signe, big-endian, complement a deux
-        octets 3-5  longitude  idem
-        octet  6    flags      bit 0 = mouvement, bit 1 = fix valide
-
-    Facteur d'echelle : degres * 10000, soit une resolution de 0.0001 degre,
-    environ 11 metres. Suffisant pour suivre un vehicule sur une carte.
-
-    Le facteur 100000 de la version precedente ne tient pas sur 3 octets :
-    la latitude atteindrait 9 000 000 pour 90 degres, au-dela des 8 388 607
-    que porte un entier signe de 24 bits.
+    Precision d'environ 1 metre.
     """
 
     lat, lon = position
 
-    lat_i = int(round(lat * FACTEUR_ECHELLE))
-    lon_i = int(round(lon * FACTEUR_ECHELLE))
+    lat_i = int(round(lat * 100000))
+    lon_i = int(round(lon * 100000))
 
-    flags = ((1 if fix_valide else 0) << 1) | (1 if en_mouvement else 0)
-
-    return _entier_24_bits(lat_i) + _entier_24_bits(lon_i) + bytes([flags])
+    return struct.pack(
+        ">ii",
+        lat_i,
+        lon_i
+    )
 
 
 # ---------------------------------------------------------------------------

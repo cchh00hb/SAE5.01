@@ -1,66 +1,77 @@
-# Bibliotheques a deposer ici
+# Bibliotheques du End-Device
 
 Ce dossier est envoye dans `/flash/lib/` sur le module par Pymakr.
 
-Les deux fichiers ci-dessous sont fournis par Pycom. Ils ne sont pas
-versionnes dans ce depot : chacun les telecharge une fois, ils ne changent
-jamais ensuite.
+Toutes les bibliotheques sont **versionnees dans ce depot**. Il n'y a rien a
+telecharger : un `git clone` suffit, et tout le groupe travaille sur les
+memes versions. C'etait la source de la plupart de nos pannes de mise au
+point, chacun pouvant avoir une variante differente sans le savoir.
 
-## Les deux fichiers, avec leur chemin exact
+## Contenu
 
-Depot officiel : https://github.com/pycom/pycom-libraries
-
-Les deux se trouvent dans le dossier `shields/lib/`.
+Fournies par Pycom, depuis `shields/lib/` du depot
+https://github.com/pycom/pycom-libraries (version `75d0e67`) :
 
 - `L76GNSS.py`
-  https://raw.githubusercontent.com/pycom/pycom-libraries/master/shields/lib/L76GNSS.py
-  Role : dialogue en I2C avec le recepteur GNSS Quectel L76, decode les
-  trames NMEA et expose la methode `coordinates()`.
+  Dialogue en I2C avec le recepteur GNSS Quectel L76, decode les trames
+  NMEA et expose `coordinates()` et `dump_nmea()`.
 
 - `pycoproc_1.py`
-  https://raw.githubusercontent.com/pycom/pycom-libraries/master/shields/lib/pycoproc_1.py
-  Role : pilote le coprocesseur PIC de la carte Pytrack, qui gere
-  l'alimentation du GNSS, l'accelerometre et les modes basse consommation.
+  Pilote le coprocesseur PIC des cartes Pytrack et Pysense **v1**, celles
+  de la salle de TP : alimentation du GNSS, accelerometre, modes basse
+  consommation.
 
-Sur la page GitHub d'un fichier, le bouton **Raw** donne le contenu brut,
-puis clic droit et Enregistrer sous. Verifiez que le fichier enregistre
-porte bien l'extension `.py` et non `.txt`.
+- `pycoproc_2.py`
+  Meme role pour les cartes **v2**. Conservee parce que `main_gnss.py` et
+  `veille.py` essaient les deux noms a l'import : le code s'adapte tout
+  seul a la carte presente, il n'y a rien a modifier.
 
-## Quelle version du coprocesseur
+- `LIS2HH12.py`
+  Accelerometre de la Pytrack. Utilisee par `veille.py` pour le reveil sur
+  mouvement (etape 9).
 
-- `pycoproc_1.py` — cartes Pytrack et Pysense **v1**
-- `pycoproc_2.py` — cartes **v2**
+Ecrite pour MicroPython, reprise du projet micropython-lib :
 
-Les deux sont dans `shields/lib/`. En cas de doute prenez `pycoproc_1.py` :
-c'est la version des cartes en salle de TP. `main_gnss.py` essaie les deux
-noms a l'import, il n'y a rien a modifier dans le code selon celui que vous
-avez depose.
+- `mqtt.py`
+  Client MQTT minimal (`umqtt.simple`). Utilisee par `main_gnss.py` pour
+  publier la position.
 
-## Verification
+Ces fichiers sont du code tiers : ne les modifiez pas. Si un correctif est
+necessaire, faites-le dans notre code, pas dans la lib, sinon la prochaine
+mise a jour l'effacera.
 
-Une fois les fichiers envoyes, dans le REPL :
+## Verification apres upload
+
+Dans le REPL :
 
     import os
     print(os.listdir('/flash/lib'))
 
-Vous devez voir :
+Vous devez voir les cinq fichiers `.py`. Si la liste est vide, la
+synchronisation Pymakr n'a pas eu lieu, ou le projet selectionne n'est pas
+`end-device`.
 
-    ['L76GNSS.py', 'pycoproc_1.py']
+Le `README.md` de ce dossier ne monte pas sur la carte : l'extension `md`
+n'est pas dans `sync_file_types` de `pymakr.conf`. C'est voulu, le module
+n'a que 4 Mo de flash.
 
-Si la liste est vide, l'upload Pymakr n'a pas eu lieu ou `sync_folder` ne
-pointe pas sur `end-device`. Le fichier `README.md` de ce dossier n'est pas
-envoye sur la carte : l'extension `md` n'est pas dans `sync_file_types` de
-`pymakr.conf`, c'est voulu, la carte n'a que 4 Mo de flash.
+## API utilisee par notre code
 
-## API utilisee par main_gnss.py
-
-Pour information, verifie dans le code source des libs :
+Verifie dans le code source des libs :
 
 - `Pycoproc(Pycoproc.PYTRACK)` — la constante `PYTRACK` vaut 2
-- `L76GNSS(py, timeout=10)` — `timeout` est la duree maximale d'une lecture
-- `gnss.coordinates()` renvoie un tuple `(latitude, longitude)` en
-  **degres decimaux**, ou `(None, None)` si le timeout expire sans fix.
-  La conversion depuis le format NMEA degres-minutes est faite par la lib,
-  il n'y a rien a recalculer.
-- `gnss.dump_nmea()` affiche les trames brutes, utile pour verifier que le
-  recepteur repond quand aucun fix n'arrive.
+- `L76GNSS(py, timeout=10)` — duree maximale d'une lecture
+- `gnss.coordinates()` renvoie `(latitude, longitude)` en **degres
+  decimaux**, ou `(None, None)` si le timeout expire sans fix. La
+  conversion depuis le NMEA degres-minutes est faite par la lib.
+- `gnss.dump_nmea()` affiche les trames brutes, utile quand aucun fix
+  n'arrive : il distingue un recepteur muet d'un recepteur qui cherche
+  encore ses satellites.
+- `LIS2HH12(py).enable_activity_interrupt(seuil_mg, duree_ms, handler)`
+  renvoie le seuil et la duree reellement appliques, arrondis aux pas du
+  capteur.
+
+## Licence
+
+Les fichiers Pycom sont distribues sous GNU GPL v3. Leurs en-tetes de
+licence sont conserves tels quels.

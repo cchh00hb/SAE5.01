@@ -1,0 +1,8 @@
+# Normalise les fins de ligne a l'enregistrement dans le depot.
+#
+# Sans ce fichier, un editeur configure en CRLF reecrit tout un fichier et
+# Git le voit modifie de bout en bout : une correction d'une ligne apparait
+# comme 750 lignes changees, et la relecture devient impossible. C'est ce
+# qui est arrive a main_ttn.py, et c'est ainsi que la charge utile sur
+# 3 octets de l'etape 8 a ete ecrasee sans que personne le remarque.
+* text=auto eol=lf

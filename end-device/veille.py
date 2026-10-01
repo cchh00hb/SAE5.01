@@ -21,8 +21,9 @@ API a utiliser :
 `py` est l'objet Pycoproc deja cree par main_gnss.py : on le partage au lieu
 d'en creer un second sur le meme bus I2C.
 
-Materiel : LoPy4 ou FiPy sur Pytrack v1 (salle de TP) ou v2.
-Libs requises dans /flash/lib : L76GNSS.py, pycoproc_1.py (ou _2), LIS2HH12.py
+Materiel : LoPy4 ou FiPy sur Pytrack v1 ou v2. La version est deduite de
+l'objet `py` recu, donc du pilote que le programme principal a choisi.
+Libs requises dans /flash/lib : LIS2HH12.py et pycoproc_1.py ou pycoproc_2.py
 """
 
 import time
@@ -32,19 +33,21 @@ from machine import Pin
 
 from LIS2HH12 import LIS2HH12
 
-# Meme detection de version que main_gnss.py. Les deux versions de la carte
-# ne s'endorment pas de la meme facon (voir dormir()), il faut donc savoir
-# laquelle est presente.
-try:
-    import pycoproc_1 as _coproc
-    PYTRACK_V2 = False
-except ImportError:
-    try:
-        import pycoproc_2 as _coproc
-        PYTRACK_V2 = True
-    except ImportError:
-        import pycoproc as _coproc       # ancienne lib unifiee, API de la v1
-        PYTRACK_V2 = False
+# Codes de reveil du coprocesseur, identiques dans pycoproc_1 et pycoproc_2.
+_WAKE_ACCELEROMETRE = 1
+_WAKE_MINUTEUR = 4
+
+
+def est_pytrack_v2(py):
+    """
+    Les deux versions de la carte ne s'endorment pas de la meme facon, il
+    faut savoir laquelle est utilisee. On regarde l'objet `py` lui-meme et
+    non les fichiers presents dans /flash/lib : les deux pilotes y sont
+    versionnes, et c'est le programme principal qui choisit (main_gnss.py
+    et main_ttn*.py essaient pycoproc_2 en premier). Seul le pilote v1
+    possede get_wake_reason() et setup_int_wake_up().
+    """
+    return not hasattr(py, "get_wake_reason")
 
 
 # --- Reglages -------------------------------------------------------------
@@ -114,7 +117,7 @@ def raison_reveil(py):
     Pytrack v2 : le module reste en deep sleep ESP32 et se reveille sur la
     broche P13 reliee a l'accelerometre, machine.wake_reason() suffit.
     """
-    if PYTRACK_V2:
+    if est_pytrack_v2(py):
         cause = machine.wake_reason()[0]
         if cause == machine.PIN_WAKE:
             return RAISON_MOUVEMENT
@@ -128,9 +131,9 @@ def raison_reveil(py):
         return RAISON_DEMARRAGE
 
     cause = py.get_wake_reason()
-    if cause == _coproc.WAKE_REASON_ACCELEROMETER:
+    if cause == _WAKE_ACCELEROMETRE:
         return RAISON_MOUVEMENT
-    if cause == _coproc.WAKE_REASON_TIMER:
+    if cause == _WAKE_MINUTEUR:
         return RAISON_TIMER
     return RAISON_DEMARRAGE
 
@@ -197,7 +200,7 @@ def dormir(py, lora=None, reveil_mouvement=True,
     pycom.rgbled(0x000000)
     time.sleep_ms(100)               # laisser partir les print sur l'UART
 
-    if PYTRACK_V2:
+    if est_pytrack_v2(py):
         # Module en deep sleep ESP32, accelerometre alimente, reveil par P13.
         if reveil_mouvement:
             broches = [Pin('P13', mode=Pin.IN, pull=Pin.PULL_DOWN)]
